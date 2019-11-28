@@ -95,7 +95,7 @@ SystemTime::duration eatLeadingDuration(absl::string_view& s) {
   }
   const absl::string_view digits(s.begin(), digits_length);
   s.remove_prefix(digits_length);
-  uint64_t num;
+  int64_t num;
   return absl::SimpleAtoi(digits, &num) ? std::chrono::seconds(num) : SystemTime::duration::max();
 }
 

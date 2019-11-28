@@ -11,6 +11,8 @@
 
 #include "source/extensions/filters/http/cache/key.pb.h"
 
+#include "extensions/filters/http/cache/cache_header_utility.h"
+
 #include "absl/strings/string_view.h"
 
 namespace Envoy {
@@ -31,36 +33,6 @@ enum CacheEntryStatus {
   FoundNotModified,
   // This entry is fresh, but can't satisfy the requested range(s).
   UnsatisfiableRange,
-};
-
-// Byte range from an HTTP request.
-class RawByteRange {
-public:
-  // - If first==UINT64_MAX, construct a RawByteRange requesting the final last
-  // body bytes.
-  // - Otherwise, construct a RawByteRange requesting the [first,last] body
-  // bytes. Prereq: first == UINT64_MAX || first <= last Invariant: isSuffix() ||
-  // firstBytePos() <= lastBytePos
-  RawByteRange(uint64_t first, uint64_t last) : first_byte_pos_(first), last_byte_pos_(last) {
-    RELEASE_ASSERT(isSuffix() || first <= last, "Illegal byte range.");
-  }
-  bool isSuffix() const { return first_byte_pos_ == UINT64_MAX; }
-  uint64_t firstBytePos() const {
-    ASSERT(!isSuffix());
-    return first_byte_pos_;
-  }
-  uint64_t lastBytePos() const {
-    ASSERT(!isSuffix());
-    return last_byte_pos_;
-  }
-  uint64_t suffixLength() const {
-    ASSERT(isSuffix());
-    return last_byte_pos_;
-  }
-
-private:
-  uint64_t first_byte_pos_;
-  uint64_t last_byte_pos_;
 };
 
 // Byte range from an HTTP request, adjusted for a known response body size.
@@ -138,7 +110,7 @@ public:
   using HeaderVector = std::vector<Http::HeaderEntry>;
 
   // Prereq: request_headers's Path(), Scheme(), and Host() are nonnull.
-  LookupRequest(const Http::HeaderMap& request_headers, SystemTime timestamp);
+  LookupRequest(const Http::HeaderMap& request_headers, SystemTime timestamp, int byte_range_parse_limit); // TODO: discuss API
 
   // Caches may modify the key according to local needs, though care must be
   // taken to ensure that meaningfully distinct responses have distinct keys.
@@ -175,6 +147,7 @@ private:
   std::vector<RawByteRange> request_range_spec_;
   SystemTime timestamp_;
   HeaderVector vary_headers_;
+  int byte_range_limit_;
   const std::string request_cache_control_;
 };
 
@@ -275,6 +248,10 @@ public:
   // Returns statically known information about a cache.
   virtual CacheInfo cacheInfo() const PURE;
 
+  // Returns configured limit on number of byte ranges that are acceptible in a
+  // range header TODO: where should this live?
+  virtual int byteRangeParseLimit() const PURE;
+
   virtual ~HttpCache() = default;
 };
 
@@ -287,6 +264,7 @@ public:
   // Returns an HttpCache that will remain valid indefinitely (at least as long
   // as the calling CacheFilter).
   virtual HttpCache& getCache() PURE;
+
   virtual ~HttpCacheFactory() = default;
 
 private:
